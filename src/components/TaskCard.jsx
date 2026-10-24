@@ -14,19 +14,21 @@ import {
   Square, 
   ChevronDown, 
   ChevronUp,
-  AlertCircle
+  Eye
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PRIORITIES } from '../constants/initialData';
+import { getRelativeDueDateLabel } from '../utils/taskCalculations';
 import { speak } from '../utils/speech';
 
 export default function TaskCard({
   task,
   onToggleComplete,
   onEdit,
-  onDelete,
+  onDeleteRequest,
   onDuplicate,
-  onToggleSubtask
+  onToggleSubtask,
+  onViewDetails
 }) {
   const [showSubtasks, setShowSubtasks] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -34,20 +36,16 @@ export default function TaskCard({
 
   const isCompleted = task.status === 'completed';
   const priorityConfig = PRIORITIES.find(p => p.id === task.priority) || PRIORITIES[2];
+  const relativeDate = getRelativeDueDateLabel(task.dueDate);
 
   // Subtask calculation
   const totalSubtasks = task.subtasks?.length || 0;
   const completedSubtasks = task.subtasks?.filter(s => s.completed).length || 0;
   const subtasksPercent = totalSubtasks > 0 ? Math.round((completedSubtasks / totalSubtasks) * 100) : 0;
 
-  // Due date status
-  const todayStr = new Date().toISOString().split('T')[0];
-  const isToday = task.dueDate === todayStr;
-  const isOverdue = task.dueDate < todayStr && !isCompleted;
-
-  const handleToggle = () => {
+  const handleToggle = (e) => {
+    e.stopPropagation();
     if (!isCompleted) {
-      // Confetti celebration
       try {
         confetti({
           particleCount: 50,
@@ -55,7 +53,7 @@ export default function TaskCard({
           origin: { y: 0.75 },
           colors: ['#7c3aed', '#a855f7', '#10b981', '#f59e0b']
         });
-      } catch (e) {}
+      } catch (err) {}
     }
     onToggleComplete(task.id);
   };
@@ -75,7 +73,7 @@ export default function TaskCard({
       group relative glass-panel rounded-2xl p-4 sm:p-5 border transition-all duration-200 hover:-translate-y-0.5
       ${isCompleted 
         ? 'opacity-70 bg-slate-50/70 dark:bg-slate-900/40 border-slate-200/50 dark:border-slate-800/50' 
-        : isOverdue
+        : relativeDate.status === 'overdue'
         ? 'border-rose-200 dark:border-rose-900/60 shadow-sm'
         : 'border-slate-200/80 dark:border-slate-800/80 hover:border-brand-500/40 dark:hover:border-brand-500/40 shadow-sm hover:shadow-md'
       }
@@ -93,6 +91,7 @@ export default function TaskCard({
             }
           `}
           title={isCompleted ? "Mark incomplete" : "Mark completed"}
+          aria-label={isCompleted ? "Mark incomplete" : "Mark completed"}
         >
           {isCompleted && <Check className="w-3.5 h-3.5 stroke-[3]" />}
         </button>
@@ -102,13 +101,17 @@ export default function TaskCard({
           
           {/* Header Row: Title and Action Buttons */}
           <div className="flex items-start justify-between gap-2">
-            <h3 className={`
-              text-sm sm:text-base font-semibold leading-snug transition-all
-              ${isCompleted 
-                ? 'line-through text-slate-400 dark:text-slate-500' 
-                : 'text-slate-900 dark:text-slate-100 hover:text-brand-600 dark:hover:text-brand-400'
-              }
-            `}>
+            <h3 
+              onClick={() => onViewDetails && onViewDetails(task)}
+              className={`
+                text-sm sm:text-base font-semibold leading-snug transition-all cursor-pointer
+                ${isCompleted 
+                  ? 'line-through text-slate-400 dark:text-slate-500' 
+                  : 'text-slate-900 dark:text-slate-100 hover:text-brand-600 dark:hover:text-brand-400'
+                }
+              `}
+              title="Click to view task details"
+            >
               {task.title}
             </h3>
 
@@ -118,6 +121,7 @@ export default function TaskCard({
                 onClick={handleReadAloud}
                 className={`p-1.5 rounded-lg text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition ${isReading ? 'text-brand-600 animate-pulse' : ''}`}
                 title="Read task aloud"
+                aria-label="Read task aloud"
               >
                 <Volume2 className="w-3.5 h-3.5" />
               </button>
@@ -125,6 +129,7 @@ export default function TaskCard({
               <button
                 onClick={() => setShowMenu(!showMenu)}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                aria-label="Task options"
               >
                 <MoreVertical className="w-3.5 h-3.5" />
               </button>
@@ -137,6 +142,16 @@ export default function TaskCard({
                     onClick={() => setShowMenu(false)}
                   />
                   <div className="absolute right-0 top-7 z-30 w-36 py-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 text-xs">
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        if (onViewDetails) onViewDetails(task);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-slate-400" />
+                      <span>View Details</span>
+                    </button>
                     <button
                       onClick={() => {
                         setShowMenu(false);
@@ -160,12 +175,12 @@ export default function TaskCard({
                     <button
                       onClick={() => {
                         setShowMenu(false);
-                        onDelete(task.id);
+                        onDeleteRequest(task);
                       }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                      <span>Delete</span>
+                      <span>Delete...</span>
                     </button>
                   </div>
                 </>
@@ -175,7 +190,10 @@ export default function TaskCard({
 
           {/* Description */}
           {task.description && (
-            <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+            <p 
+              onClick={() => onViewDetails && onViewDetails(task)}
+              className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed cursor-pointer hover:text-slate-700 dark:hover:text-slate-300"
+            >
               {task.description}
             </p>
           )}
@@ -201,20 +219,20 @@ export default function TaskCard({
               </span>
             )}
 
-            {/* Due Date Badge */}
+            {/* Due Date Badge with relative status */}
             {task.dueDate && (
               <span className={`
                 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-medium border
-                ${isOverdue 
+                ${relativeDate.status === 'overdue' && !isCompleted
                   ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900' 
-                  : isToday
+                  : relativeDate.status === 'today' && !isCompleted
                   ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200/60 dark:border-slate-700/60'
                 }
               `}>
                 <Calendar className="w-3 h-3" />
                 <span>
-                  {isToday ? 'Today' : isOverdue ? `Overdue (${task.dueDate})` : task.dueDate}
+                  {relativeDate.label}
                 </span>
                 {task.dueTime && <span className="opacity-70">@{task.dueTime}</span>}
               </span>

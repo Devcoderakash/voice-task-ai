@@ -6,18 +6,20 @@ import {
   Plus, 
   ChevronRight, 
   ChevronLeft,
-  Flame,
   Calendar,
-  Volume2
+  Volume2,
+  Eye
 } from 'lucide-react';
 import { PRIORITIES } from '../constants/initialData';
+import { getRelativeDueDateLabel } from '../utils/taskCalculations';
 import { speak } from '../utils/speech';
 
 export default function KanbanView({
   tasks,
   onUpdateStatus,
   onEditTask,
-  onOpenNewTaskModal
+  onOpenNewTaskModal,
+  onViewDetails
 }) {
   const columns = [
     { id: 'todo', title: 'To Do', icon: CircleDashed, color: 'text-amber-500', bg: 'bg-amber-500/10' },
@@ -55,6 +57,7 @@ export default function KanbanView({
                   onClick={onOpenNewTaskModal}
                   className="p-1 rounded-lg text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                   title="Add task to this column"
+                  aria-label="Add task to To Do column"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -70,6 +73,7 @@ export default function KanbanView({
               ) : (
                 columnTasks.map((task) => {
                   const priorityConfig = PRIORITIES.find(p => p.id === task.priority) || PRIORITIES[2];
+                  const relativeDate = getRelativeDueDateLabel(task.dueDate);
 
                   return (
                     <div
@@ -93,6 +97,13 @@ export default function KanbanView({
                           >
                             <Volume2 className="w-3 h-3" />
                           </button>
+                          <button
+                            onClick={() => onViewDetails && onViewDetails(task)}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-brand-600 transition"
+                            title="View details"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
                           {col.id !== 'todo' && (
                             <button
                               onClick={() => onUpdateStatus(task.id, col.id === 'completed' ? 'in-progress' : 'todo')}
@@ -115,22 +126,25 @@ export default function KanbanView({
                       </div>
 
                       <h4 
-                        onClick={() => onEditTask(task)}
+                        onClick={() => onViewDetails ? onViewDetails(task) : onEditTask(task)}
                         className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-pointer hover:text-brand-600 transition"
                       >
                         {task.title}
                       </h4>
 
                       {task.description && (
-                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
+                        <p 
+                          onClick={() => onViewDetails && onViewDetails(task)}
+                          className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 cursor-pointer"
+                        >
                           {task.description}
                         </p>
                       )}
 
                       <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-                        <span className="flex items-center gap-1">
+                        <span className={`flex items-center gap-1 ${relativeDate.status === 'overdue' && task.status !== 'completed' ? 'text-rose-500 font-semibold' : ''}`}>
                           <Calendar className="w-3 h-3" />
-                          {task.dueDate}
+                          {relativeDate.label}
                         </span>
                         <span className="font-medium text-slate-500 dark:text-slate-400">
                           {task.category}

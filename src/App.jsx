@@ -4,6 +4,8 @@ import Sidebar from './components/Sidebar';
 import StatsCards from './components/StatsCards';
 import TaskCard from './components/TaskCard';
 import TaskModal from './components/TaskModal';
+import TaskDetailsModal from './components/TaskDetailsModal';
+import ConfirmDeleteModal from './components/ConfirmDeleteModal';
 import VoiceAssistantModal from './components/VoiceAssistantModal';
 import KanbanView from './components/KanbanView';
 import AnalyticsView from './components/AnalyticsView';
@@ -17,7 +19,8 @@ import {
   saveTheme, 
   getStoredSettings, 
   saveSettings,
-  resetToSampleTasks 
+  resetToSampleTasks,
+  clearAllTasks
 } from './utils/storage';
 import { PRIORITIES, CATEGORIES } from './constants/initialData';
 import { speak } from './utils/speech';
@@ -33,9 +36,7 @@ import {
   Sparkles, 
   CheckCircle2, 
   CalendarDays,
-  FolderOpen,
-  LayoutGrid,
-  List
+  FolderOpen
 } from 'lucide-react';
 
 export default function App() {
@@ -47,12 +48,14 @@ export default function App() {
   // Navigation & View State
   const [activeView, setActiveView] = useState('dashboard'); // 'dashboard' | 'tasks' | 'today' | 'kanban' | 'analytics'
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [taskViewLayout, setTaskViewLayout] = useState('detailed'); // 'detailed' | 'compact'
+  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(() => !!getStoredSettings().collapsedSidebar);
 
   // Modals
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState(null);
+  const [selectedTaskForDetails, setSelectedTaskForDetails] = useState(null);
+  const [taskToDelete, setTaskToDelete] = useState(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   // Search, Filters & Sorting
@@ -83,14 +86,24 @@ export default function App() {
     saveTheme(newTheme);
   };
 
+  const handleToggleDesktopCollapse = () => {
+    setIsDesktopCollapsed(prev => {
+      const next = !prev;
+      const updatedSettings = { ...settings, collapsedSidebar: next };
+      setSettings(updatedSettings);
+      saveSettings(updatedSettings);
+      return next;
+    });
+  };
+
   const showToast = (title, message, type = 'success') => {
     setToast({ title, message, type, id: Date.now() });
   };
 
-  // Keyboard Shortcuts Handler (Cmd+K, Alt+V, Alt+N)
+  // Keyboard Shortcuts Handler (Cmd+K, Alt+V, Alt+N, Esc)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Focus search: Cmd+K or Ctrl+K or /
+      // Focus search: Cmd+K or Ctrl+K
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         const searchInput = document.getElementById('search-tasks-input');
@@ -107,16 +120,27 @@ export default function App() {
         setTaskToEdit(null);
         setIsTaskModalOpen(true);
       }
+      // Escape to close modals
+      if (e.key === 'Escape') {
+        if (isVoiceModalOpen) setIsVoiceModalOpen(false);
+        if (isTaskModalOpen) setIsTaskModalOpen(false);
+        if (selectedTaskForDetails) setSelectedTaskForDetails(null);
+        if (taskToDelete) setTaskToDelete(null);
+        if (isSettingsModalOpen) setIsSettingsModalOpen(false);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isVoiceModalOpen, isTaskModalOpen, selectedTaskForDetails, taskToDelete, isSettingsModalOpen]);
 
   // Task Handlers
   const handleCreateOrUpdateTask = (taskData) => {
     if (taskToEdit) {
       setTasks(prev => prev.map(t => t.id === taskData.id ? taskData : t));
+      if (selectedTaskForDetails?.id === taskData.id) {
+        setSelectedTaskForDetails(taskData);
+      }
       showToast('Task Updated', `"${taskData.title}" has been saved.`, 'success');
     } else {
       setTasks(prev => [taskData, ...prev]);
@@ -135,6 +159,9 @@ export default function App() {
           completedAt: isNowCompleted ? new Date().toISOString() : null,
           subtasks: t.subtasks?.map(s => ({ ...s, completed: isNowCompleted })) || []
         };
+        if (selectedTaskForDetails?.id === taskId) {
+          setSelectedTaskForDetails(updated);
+        }
         showToast(
           isNowCompleted ? 'Task Completed! 🎉' : 'Task Reopened',
           `"${t.title}" status updated to ${updated.status}.`,
@@ -152,22 +179,36 @@ export default function App() {
         const updatedSubtasks = t.subtasks.map(s => 
           s.id === subtaskId ? { ...s, completed: !s.completed } : s
         );
-        const allCompleted = updatedSubtasks.every(s => s.completed);
-        return {
+        const allCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(s => s.completed);
+        const updatedTask = {
           ...t,
           subtasks: updatedSubtasks,
           status: allCompleted ? 'completed' : (t.status === 'completed' ? 'in-progress' : t.status),
           completedAt: allCompleted ? new Date().toISOString() : null
         };
+        if (selectedTaskForDetails?.id === taskId) {
+          setSelectedTaskForDetails(updatedTask);
+        }
+        return updatedTask;
       }
       return t;
     }));
   };
 
-  const handleDeleteTask = (taskId) => {
-    const taskToDelete = tasks.find(t => t.id === taskId);
-    setTasks(prev => prev.filter(t => t.id !== taskId));
-    showToast('Task Deleted', `"${taskToDelete?.title || 'Task'}" has been removed.`, 'error');
+  const handleRequestDelete = (task) => {
+    setTaskToDelete(task);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!taskToDelete) return;
+    const deletedId = taskToDelete.id;
+    const deletedTitle = taskToDelete.title;
+    setTasks(prev => prev.filter(t => t.id !== deletedId));
+    if (selectedTaskForDetails?.id === deletedId) {
+      setSelectedTaskForDetails(null);
+    }
+    setTaskToDelete(null);
+    showToast('Task Deleted', `"${deletedTitle}" has been removed.`, 'error');
   };
 
   const handleDuplicateTask = (task) => {
@@ -186,11 +227,15 @@ export default function App() {
   const handleUpdateStatus = (taskId, newStatus) => {
     setTasks(prev => prev.map(t => {
       if (t.id === taskId) {
-        return {
+        const updated = {
           ...t,
           status: newStatus,
           completedAt: newStatus === 'completed' ? new Date().toISOString() : null
         };
+        if (selectedTaskForDetails?.id === taskId) {
+          setSelectedTaskForDetails(updated);
+        }
+        return updated;
       }
       return t;
     }));
@@ -217,9 +262,9 @@ export default function App() {
       }
     } else if (parsed.action === 'DELETE_TASK') {
       if (parsed.taskId) {
-        handleDeleteTask(parsed.taskId);
-        if (settings?.voiceFeedback) {
-          speak(parsed.message, settings.speechRate);
+        const target = tasks.find(t => t.id === parsed.taskId);
+        if (target) {
+          handleRequestDelete(target);
         }
       } else {
         showToast('Voice Action', parsed.message, 'info');
@@ -368,10 +413,12 @@ export default function App() {
             tasks={tasks}
             onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
             onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+            isDesktopCollapsed={isDesktopCollapsed}
+            onToggleDesktopCollapse={handleToggleDesktopCollapse}
           />
 
           {/* Main Content Area */}
-          <main className="flex-1 min-w-0 lg:pl-64 space-y-6">
+          <main className={`flex-1 min-w-0 transition-all duration-300 ${isDesktopCollapsed ? 'lg:pl-20' : 'lg:pl-64'} space-y-6`}>
             
             {/* 1. Dashboard View */}
             {activeView === 'dashboard' && (
@@ -473,9 +520,10 @@ export default function App() {
                           setTaskToEdit(t);
                           setIsTaskModalOpen(true);
                         }}
-                        onDelete={handleDeleteTask}
+                        onDeleteRequest={handleRequestDelete}
                         onDuplicate={handleDuplicateTask}
                         onToggleSubtask={handleToggleSubtask}
+                        onViewDetails={(t) => setSelectedTaskForDetails(t)}
                       />
                     ))
                   )}
@@ -597,6 +645,7 @@ export default function App() {
                         onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
                         className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
                         title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                        aria-label="Toggle sort direction"
                       >
                         <ArrowUpDown className="w-3.5 h-3.5" />
                       </button>
@@ -695,9 +744,10 @@ export default function App() {
                           setTaskToEdit(t);
                           setIsTaskModalOpen(true);
                         }}
-                        onDelete={handleDeleteTask}
+                        onDeleteRequest={handleRequestDelete}
                         onDuplicate={handleDuplicateTask}
                         onToggleSubtask={handleToggleSubtask}
+                        onViewDetails={(t) => setSelectedTaskForDetails(t)}
                       />
                     ))
                   )}
@@ -741,6 +791,7 @@ export default function App() {
                     setTaskToEdit(null);
                     setIsTaskModalOpen(true);
                   }}
+                  onViewDetails={(t) => setSelectedTaskForDetails(t)}
                 />
               </div>
             )}
@@ -765,6 +816,32 @@ export default function App() {
 
         </div>
       </div>
+
+      {/* Task Details Modal */}
+      <TaskDetailsModal
+        isOpen={!!selectedTaskForDetails}
+        task={selectedTaskForDetails}
+        onClose={() => setSelectedTaskForDetails(null)}
+        onEdit={(task) => {
+          setSelectedTaskForDetails(null);
+          setTaskToEdit(task);
+          setIsTaskModalOpen(true);
+        }}
+        onDeleteRequest={(task) => {
+          setSelectedTaskForDetails(null);
+          handleRequestDelete(task);
+        }}
+        onToggleComplete={handleToggleComplete}
+        onToggleSubtask={handleToggleSubtask}
+      />
+
+      {/* Confirmation Dialog for Deletion */}
+      <ConfirmDeleteModal
+        isOpen={!!taskToDelete}
+        taskTitle={taskToDelete?.title || 'this task'}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setTaskToDelete(null)}
+      />
 
       {/* Voice Assistant Modal */}
       <VoiceAssistantModal
@@ -810,8 +887,8 @@ export default function App() {
           showToast('Reset Complete', 'Default demo tasks loaded.', 'success');
         }}
         onClearAllTasks={() => {
+          clearAllTasks();
           setTasks([]);
-          saveTasks([]);
           showToast('Tasks Cleared', 'All tasks have been removed.', 'error');
         }}
       />

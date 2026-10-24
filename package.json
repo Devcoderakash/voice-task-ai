@@ -1,11 +1,13 @@
 {
-  "name": "hhtask",
+  "name": "voice-task-ai",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/tests/*.test.js",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -16,6 +18,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
@@ -23,6 +26,7 @@
     "oxlint": "^1.88.0",
     "postcss": "^8.5.31",
     "tailwindcss": "^3.4.19",
+    "typescript": "^7.0.2",
     "vite": "^8.3.4"
   }
 }
